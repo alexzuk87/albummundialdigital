@@ -1,0 +1,60 @@
+{
+  "unlocked_stickers": [
+    "cuw_01",
+    "arg_02",
+    "gha_03",
+    "tun_07",
+    "uru_05",
+    "eng_05",
+    "arg_08",
+    "cpv_06",
+    "cpv_08",
+    "aut_04",
+    "alg_02",
+    "por_08",
+    "sui_08",
+    "civ_11",
+    "fra_10",
+    "sen_04",
+    "uzb_05",
+    "mar_09",
+    "por_10",
+    "bih_08",
+    "can_07",
+    "jor_03",
+    "tun_01",
+    "egy_05",
+    "esp_10",
+    "aus_01",
+    "kor_10",
+    "kor_01",
+    "pan_04"
+  ],
+  "duplicates": [],
+  "pending_codes": [],
+  "used_codes": [],
+  "trivia_today": {
+    "date": "2026-05-31",
+    "count": 0,
+    "answered_ids": []
+  },
+  "exchange_offers": [],
+  "historical_unlocked": [],
+  "last_unlock_animation": null,
+  "custom_team": {
+    "name": "Mi Equipo Soñado",
+    "lineup": {
+      "gk": "cuw_01",
+      "rb": "arg_02",
+      "cb1": "aut_04",
+      "cb2": "eng_05",
+      "lb": "uru_05",
+      "cm1": "cpv_08",
+      "cm2": "tun_07",
+      "cm3": "arg_08",
+      "rw": "por_10",
+      "st": "civ_11",
+      "lw": "fra_10"
+    }
+  }
+}
