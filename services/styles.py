@@ -820,6 +820,42 @@ div:has(> .rank-btn-off) + div button[data-testid="stBaseButton-secondary"] {
     font-size: 0.75rem;
 }
 
+.dupe-count-badge {
+    background: var(--grass-dark);
+    color: #fff;
+    font-family: 'Nunito', sans-serif;
+    font-weight: 800;
+    font-size: 0.62rem;
+    padding: 2px 7px;
+    border-radius: 20px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    border: 1.5px solid #fff;
+}
+
+.inventory-cat-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin: 1rem 0 0.4rem;
+    padding-bottom: 4px;
+    border-bottom: 2px solid var(--grass-light);
+}
+
+.inventory-cat-title {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.5rem;
+    letter-spacing: 1px;
+    color: var(--grass-dark);
+}
+
+.inventory-cat-meta {
+    font-family: 'Nunito', sans-serif;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #666;
+}
+
 .sticker-rarity {
     font-size: 0.55rem;
     font-weight: 800;

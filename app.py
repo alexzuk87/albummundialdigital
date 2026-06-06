@@ -45,6 +45,7 @@ from services.game_logic import (
     trivia_status_label,
 )
 from services.album_ui import album_page_html, filter_team_pages
+from services.inventory import duplicates_by_category
 from services.sticker_ui import reveal_card_html, sticker_card_html
 from services.database import get_achievements, reset_user_progress as reset_user
 from services.storage import save_progress
@@ -488,6 +489,50 @@ def page_album(progress: dict) -> None:
             st.rerun()
 
 
+def page_inventario(progress: dict) -> None:
+    st.subheader("🔁 Inventario de repetidas")
+    st.caption(
+        "Tus figuritas repetidas, ordenadas por categoría. "
+        "Usalas en la sección **Intercambio** para conseguir las que te faltan."
+    )
+
+    groups = duplicates_by_category(progress)
+    total = len(progress.get("duplicates", []))
+
+    if not groups:
+        st.info(
+            "Todavía no tenés figuritas repetidas. "
+            "Cuando una trivia te dé una figurita que ya tenés, aparecerá acá."
+        )
+        return
+
+    distintas = sum(len(items) for _, items in groups)
+    pills = [
+        f"🔁 Repetidas totales: {total}",
+        f"🃏 Figuritas distintas: {distintas}",
+        f"🗂️ Categorías: {len(groups)}",
+    ]
+    st.markdown(
+        "".join(f'<span class="stat-pill">{p}</span>' for p in pills),
+        unsafe_allow_html=True,
+    )
+
+    for category, items in groups:
+        label = RARITY_LABELS.get(category, category)
+        cat_total = sum(qty for _, qty in items)
+        st.markdown(
+            f'<div class="inventory-cat-header">'
+            f'<span class="inventory-cat-title">{label}</span>'
+            f'<span class="inventory-cat-meta">{cat_total} repetidas · {len(items)} distintas</span>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+        cards = "".join(
+            sticker_card_html(sticker, True, dupe_count=qty) for sticker, qty in items
+        )
+        st.markdown(f'<div class="sticker-grid">{cards}</div>', unsafe_allow_html=True)
+
+
 def page_intercambio(progress: dict) -> None:
     st.subheader("🔄 Mercado de intercambios")
     st.info(
@@ -776,7 +821,7 @@ def main() -> None:
         st.divider()
         page = st.radio(
             "Navegación",
-            ["🏠 Inicio", "🎯 Trivias", "📖 Álbum", "⭐ Mi 11", "🔄 Intercambio", "🏅 Logros", "🏛️ Históricos", "🌍 Selecciones"],
+            ["🏠 Inicio", "🎯 Trivias", "📖 Álbum", "⭐ Mi 11", "🔁 Repetidas", "🔄 Intercambio", "🏅 Logros", "🏛️ Históricos", "🌍 Selecciones"],
             label_visibility="collapsed",
         )
         st.divider()
@@ -800,6 +845,7 @@ def main() -> None:
         "🎯": page_trivia,
         "📖": page_album,
         "⭐": page_mi_equipo,
+        "🔁": page_inventario,
         "🔄": page_intercambio,
         "🏅": page_logros,
         "🏛️": page_historicos,

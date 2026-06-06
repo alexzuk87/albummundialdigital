@@ -180,13 +180,32 @@ def _rarity_bg_class(rarity: str) -> str:
 
 
 
-def bandera_card_html(sticker: dict, unlocked: bool, is_dupe: bool = False) -> str:
+def _dupe_badge_html(is_dupe: bool, dupe_count: int) -> str:
+
+    if dupe_count and dupe_count > 0:
+
+        return f'<span class="dupe-badge dupe-count-badge">x{dupe_count}</span>'
+
+    if is_dupe:
+
+        return '<span class="dupe-badge">🔄</span>'
+
+    return ""
+
+
+
+
+def bandera_card_html(
+
+    sticker: dict, unlocked: bool, is_dupe: bool = False, dupe_count: int = 0
+
+) -> str:
 
     team_id = sticker["team_id"]
 
     flag = flag_img_html(team_id, 80 if unlocked else 52)
 
-    dupe = '<span class="dupe-badge">🔄</span>' if is_dupe else ""
+    dupe = _dupe_badge_html(is_dupe, dupe_count)
 
     if unlocked:
 
@@ -218,11 +237,15 @@ def bandera_card_html(sticker: dict, unlocked: bool, is_dupe: bool = False) -> s
 
 
 
-def sticker_card_html(sticker: dict, unlocked: bool, is_dupe: bool = False) -> str:
+def sticker_card_html(
+
+    sticker: dict, unlocked: bool, is_dupe: bool = False, dupe_count: int = 0
+
+) -> str:
 
     if sticker.get("kind") == "bandera":
 
-        return bandera_card_html(sticker, unlocked, is_dupe)
+        return bandera_card_html(sticker, unlocked, is_dupe, dupe_count)
 
 
 
@@ -252,7 +275,7 @@ def sticker_card_html(sticker: dict, unlocked: bool, is_dupe: bool = False) -> s
 
         )
 
-        dupe = '<span class="dupe-badge">🔄</span>' if is_dupe else ""
+        dupe = _dupe_badge_html(is_dupe, dupe_count)
 
         flag = flag_img_html(team_id, 18)
 
