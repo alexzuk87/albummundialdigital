@@ -1,11 +1,18 @@
 """Autenticación: registro, login y Google OAuth."""
 
+import os
 import re
 import secrets
 from urllib.parse import urlencode
 
 import bcrypt
 import streamlit as st
+
+# Permite que el intercambio de token funcione con redirect_uri http://localhost
+# (oauthlib exige HTTPS por defecto) y evita el error "Scope has changed" cuando
+# Google normaliza los scopes (email/profile -> URLs completas).
+os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
 from services.database import (
     create_user,
