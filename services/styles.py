@@ -1362,6 +1362,23 @@ div:has(> .rank-btn-off) + div button[data-testid="stBaseButton-secondary"] {
     margin: 0.5rem 0;
 }
 
+/* Texto legible en el área principal aunque el dispositivo esté en modo oscuro.
+   Solo afecta a .block-container (no la barra lateral ni componentes con color propio). */
+.block-container [data-testid="stWidgetLabel"] p,
+.block-container [data-testid="stWidgetLabel"] label,
+.block-container [data-testid="stCaptionContainer"],
+.block-container [data-testid="stCaptionContainer"] p,
+.block-container [data-testid="stMarkdownContainer"] p,
+.block-container [data-testid="stMarkdownContainer"] li {
+    color: #1b2a1f;
+}
+
+.block-container [data-testid="stMetricLabel"],
+.block-container [data-testid="stMetricLabel"] p,
+.block-container [data-testid="stMetricValue"] {
+    color: #1b2a1f !important;
+}
+
 section[data-testid="stSidebar"] {
     background: var(--grass-dark) !important;
     border-right: 3px solid var(--line-white) !important;
@@ -1597,6 +1614,55 @@ div[data-testid="stMetric"] {
     }
     .pitch-line {
         gap: 4px;
+    }
+}
+
+/* Legibilidad en celular: fase de grupos y cuadro eliminatorio */
+@media (max-width: 640px) {
+    .group-flag-name {
+        font-size: 0.8rem;
+        line-height: 1.25;
+        word-break: normal;
+        overflow-wrap: anywhere;
+    }
+    .group-pick-card {
+        min-height: auto;
+        padding: 10px 8px 12px;
+    }
+    .group-pick-title {
+        font-size: 1.2rem;
+    }
+    .group-flag-row img {
+        width: 26px !important;
+        height: auto !important;
+    }
+    /* Tarjetas de partido (dieciseisavos en adelante) */
+    .knockout-match-card {
+        padding: 12px 10px;
+    }
+    .knockout-match-card .group-flag-name {
+        font-size: 0.95rem;
+        font-weight: 800;
+    }
+    .knockout-match-card .group-flag-row img {
+        width: 30px !important;
+        height: auto !important;
+    }
+    .knockout-team-row {
+        padding: 6px 4px;
+    }
+    /* Árbol resumen del cuadro (scroll horizontal) */
+    .knockout-tree-col {
+        min-width: 150px;
+    }
+    .knockout-col-title {
+        font-size: 0.9rem;
+    }
+    .bracket-team-row-html .group-flag-name {
+        font-size: 0.72rem;
+    }
+    .third-pick-card .group-flag-name {
+        font-size: 0.85rem;
     }
 }
 </style>

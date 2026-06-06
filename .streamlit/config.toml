@@ -1,0 +1,9 @@
+[theme]
+# Forzamos tema claro para que el texto se vea siempre oscuro,
+# aunque el celular/navegador esté en modo oscuro.
+base = "light"
+primaryColor = "#2e8f47"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f0f2f6"
+textColor = "#1b2a1f"
+font = "sans serif"

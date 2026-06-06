@@ -30,11 +30,92 @@ def collect_third_places(group_picks: dict[str, dict[str, str]]) -> list[str]:
     return [group_picks[g]["third"] for g in GROUP_ORDER if g in group_picks]
 
 
+def _name_to_group(group_picks: dict[str, dict[str, str]]) -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for g, picks in group_picks.items():
+        for key in ("first", "second", "third"):
+            name = picks.get(key)
+            if name:
+                mapping[name] = g
+    return mapping
+
+
+def _pair_avoid_same_group(
+    items: list[str], name_to_group: dict[str, str]
+) -> list[tuple[str, str]]:
+    """Empareja una lista evitando, en lo posible, cruces del mismo grupo."""
+    remaining = list(items)
+    pairs: list[tuple[str, str]] = []
+    while len(remaining) >= 2:
+        a = remaining.pop(0)
+        idx = next(
+            (i for i, x in enumerate(remaining) if name_to_group.get(x) != name_to_group.get(a)),
+            0,
+        )
+        pairs.append((a, remaining.pop(idx)))
+    if remaining:
+        pairs.append((remaining[0], "BYE"))
+    return pairs
+
+
+def _repair_same_group(
+    pairs: list[tuple[str, str]], name_to_group: dict[str, str]
+) -> list[tuple[str, str]]:
+    """Intercambia rivales para deshacer cruces del mismo grupo cuando es posible."""
+    work = [list(p) for p in pairs]
+
+    def same_group(pair: list[str]) -> bool:
+        a, b = pair
+        if "BYE" in (a, b):
+            return False
+        ga = name_to_group.get(a)
+        return ga is not None and ga == name_to_group.get(b)
+
+    for i, pair in enumerate(work):
+        if not same_group(pair):
+            continue
+        a, b = pair
+        for j, other in enumerate(work):
+            if i == j or "BYE" in other:
+                continue
+            c, d = other
+            if name_to_group.get(a) != name_to_group.get(d) and name_to_group.get(c) != name_to_group.get(b):
+                work[i], work[j] = [a, d], [c, b]
+                break
+            if name_to_group.get(a) != name_to_group.get(c) and name_to_group.get(d) != name_to_group.get(b):
+                work[i], work[j] = [a, c], [d, b]
+                break
+    return [tuple(p) for p in work]
+
+
+def seed_knockout_pairs(
+    group_picks: dict[str, dict[str, str]],
+    best_thirds: list[str],
+) -> list[tuple[str, str]]:
+    """Cruces de dieciseisavos: cada 1° contra un 2°/3° de otro grupo."""
+    name_to_group = _name_to_group(group_picks)
+    firsts = [group_picks[g]["first"] for g in GROUP_ORDER if g in group_picks]
+    seconds = [group_picks[g]["second"] for g in GROUP_ORDER if g in group_picks]
+    pool = seconds + list(best_thirds)
+
+    pairs: list[tuple[str, str]] = []
+    for winner in firsts:
+        if not pool:
+            break
+        idx = next(
+            (i for i, rival in enumerate(pool) if name_to_group.get(rival) != name_to_group.get(winner)),
+            0,
+        )
+        pairs.append((winner, pool.pop(idx)))
+    pairs.extend(_pair_avoid_same_group(pool, name_to_group))
+    return _repair_same_group(pairs, name_to_group)
+
+
 def build_qualified_32(
     group_picks: dict[str, dict[str, str]],
     best_thirds: list[str],
 ) -> tuple[list[str] | None, str | None]:
-    """Arma la lista de 32 clasificados (12+12+8)."""
+    """Arma la lista de 32 clasificados (12+12+8) ya sembrada para el cruce."""
     if len(best_thirds) != THIRD_PLACES_NEEDED:
         return None, f"Elegí exactamente {THIRD_PLACES_NEEDED} mejores terceros (llevas {len(best_thirds)})."
 
@@ -43,13 +124,8 @@ def build_qualified_32(
     if invalid:
         return None, f"Terceros inválidos: {', '.join(invalid)}"
 
-    qualified: list[str] = []
-    for g in GROUP_ORDER:
-        if g not in group_picks:
-            continue
-        qualified.append(group_picks[g]["first"])
-        qualified.append(group_picks[g]["second"])
-    qualified.extend(best_thirds)
+    pairs = seed_knockout_pairs(group_picks, best_thirds)
+    qualified = [team for pair in pairs for team in pair]
     if len(qualified) != 32:
         return None, "Error al armar los 32 clasificados."
     return qualified, None
