@@ -71,6 +71,21 @@ def init_db() -> None:
                 created_at TEXT NOT NULL,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS sim_matches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                opponent_id TEXT NOT NULL,
+                opponent_name TEXT NOT NULL,
+                user_goals INTEGER NOT NULL,
+                opp_goals INTEGER NOT NULL,
+                result TEXT NOT NULL,
+                played_on TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_sim_matches_user ON sim_matches(user_id);
             """
         )
 
@@ -271,11 +286,95 @@ def delete_exchange_offer(offer_id: int) -> None:
         conn.execute("DELETE FROM exchange_offers WHERE id = ?", (offer_id,))
 
 
+def record_sim_match(
+    user_id: int,
+    opponent_id: str,
+    opponent_name: str,
+    user_goals: int,
+    opp_goals: int,
+    result: str,
+    played_on: str,
+) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO sim_matches
+               (user_id, opponent_id, opponent_name, user_goals, opp_goals, result, played_on, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, opponent_id, opponent_name, user_goals, opp_goals, result, played_on, _now()),
+        )
+
+
+def count_sim_matches_today(user_id: int, played_on: str) -> int:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM sim_matches WHERE user_id = ? AND played_on = ?",
+            (user_id, played_on),
+        ).fetchone()
+        return int(row["n"]) if row else 0
+
+
+def get_sim_overall(user_id: int) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT
+                 COUNT(*) AS played,
+                 COALESCE(SUM(result = 'win'), 0) AS won,
+                 COALESCE(SUM(result = 'draw'), 0) AS drawn,
+                 COALESCE(SUM(result = 'loss'), 0) AS lost,
+                 COALESCE(SUM(user_goals), 0) AS goals_for,
+                 COALESCE(SUM(opp_goals), 0) AS goals_against
+               FROM sim_matches WHERE user_id = ?""",
+            (user_id,),
+        ).fetchone()
+        return {
+            "played": int(row["played"]),
+            "won": int(row["won"]),
+            "drawn": int(row["drawn"]),
+            "lost": int(row["lost"]),
+            "goals_for": int(row["goals_for"]),
+            "goals_against": int(row["goals_against"]),
+        }
+
+
+def get_sim_by_opponent(user_id: int) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT opponent_id, opponent_name,
+                 COUNT(*) AS played,
+                 COALESCE(SUM(result = 'win'), 0) AS won,
+                 COALESCE(SUM(result = 'draw'), 0) AS drawn,
+                 COALESCE(SUM(result = 'loss'), 0) AS lost
+               FROM sim_matches WHERE user_id = ?
+               GROUP BY opponent_id, opponent_name
+               ORDER BY won DESC, played DESC""",
+            (user_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_sim_ranking(limit: int = 20) -> list[dict]:
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT u.username AS username,
+                 COUNT(*) AS played,
+                 COALESCE(SUM(m.result = 'win'), 0) AS won,
+                 COALESCE(SUM(m.result = 'draw'), 0) AS drawn,
+                 COALESCE(SUM(m.result = 'loss'), 0) AS lost
+               FROM sim_matches m JOIN users u ON u.id = m.user_id
+               GROUP BY m.user_id, u.username
+               ORDER BY won DESC, played ASC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def reset_user_progress(user_id: int) -> None:
     with get_conn() as conn:
         conn.execute("DELETE FROM user_stickers WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM user_achievements WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM exchange_offers WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM sim_matches WHERE user_id = ?", (user_id,))
         conn.execute(
             """UPDATE user_progress SET trivia_today_json = '{}', last_unlock_json = NULL,
                custom_team_json = '{}' WHERE user_id = ?""",

@@ -856,6 +856,70 @@ div:has(> .rank-btn-off) + div button[data-testid="stBaseButton-secondary"] {
     color: #666;
 }
 
+/* Simulación de partidos */
+.sim-scoreboard {
+    border-radius: 16px;
+    padding: 1rem 1.25rem;
+    margin: 0.5rem 0 1rem;
+    text-align: center;
+    color: #fff;
+    box-shadow: var(--shadow);
+    font-family: 'Nunito', sans-serif;
+}
+
+.sim-score-win {
+    background: linear-gradient(135deg, #1b6b34, #3daa5c);
+}
+
+.sim-score-draw {
+    background: linear-gradient(135deg, #607d8b, #90a4ae);
+}
+
+.sim-score-loss {
+    background: linear-gradient(135deg, #7b1f1f, #c0392b);
+}
+
+.sim-score-headline {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.8rem;
+    letter-spacing: 1px;
+    margin-bottom: 0.4rem;
+}
+
+.sim-score-line {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.sim-score-team {
+    font-weight: 800;
+    font-size: 0.95rem;
+    max-width: 200px;
+}
+
+.sim-score-num {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 2.4rem;
+    line-height: 1;
+    background: rgba(255,255,255,0.18);
+    border-radius: 10px;
+    padding: 2px 14px;
+}
+
+.sim-score-sep {
+    font-size: 1.4rem;
+    opacity: 0.8;
+}
+
+.sim-score-meta {
+    margin-top: 0.5rem;
+    font-size: 0.8rem;
+    opacity: 0.9;
+}
+
 .sticker-rarity {
     font-size: 0.55rem;
     font-weight: 800;

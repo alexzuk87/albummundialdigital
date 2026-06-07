@@ -47,7 +47,22 @@ from services.game_logic import (
 from services.album_ui import album_page_html, filter_team_pages
 from services.inventory import duplicates_by_category
 from services.sticker_ui import reveal_card_html, sticker_card_html
-from services.database import get_achievements, reset_user_progress as reset_user
+from services.database import (
+    get_achievements,
+    get_sim_by_opponent,
+    get_sim_ranking,
+    reset_user_progress as reset_user,
+)
+from data.sim_teams import SIM_TEAMS
+from services.simulation import (
+    available_goalkeepers,
+    available_outfielders,
+    play_match,
+    sim_matches_remaining,
+    squad_strength,
+    user_sim_overall,
+)
+from services.constants import MAX_SIM_PER_DAY
 from services.storage import save_progress
 from services.progress_utils import ensure_progress_user, progress_user_id
 from services.html_render import show_pack_opening
@@ -62,6 +77,19 @@ st.set_page_config(
 )
 
 st.markdown(ALBUM_CSS, unsafe_allow_html=True)
+
+NAV_OPTIONS = [
+    "🏠 Inicio",
+    "🎯 Trivias",
+    "🎮 Simular",
+    "📖 Álbum",
+    "⭐ Mi 11",
+    "🔁 Repetidas",
+    "🔄 Intercambio",
+    "🏅 Logros",
+    "🏛️ Históricos",
+    "🌍 Selecciones",
+]
 
 
 def init_state() -> None:
@@ -118,6 +146,37 @@ def _on_album_jump() -> None:
 def show_new_achievements(achievements: list[dict]) -> None:
     for ach in achievements:
         st.toast(f"{ach['icon']} Logro desbloqueado: {ach['title']}", icon="🏆")
+
+
+def _go_to_section(target: str) -> None:
+    """Callback de navegación: cambia la sección activa de la barra lateral."""
+    st.session_state.nav_choice = target
+
+
+def render_home_shortcuts() -> None:
+    st.markdown("#### 🚀 Accesos rápidos")
+    shortcuts = [
+        ("🎯 Trivias", "Jugá y ganá figuritas"),
+        ("🎮 Simular", "Partidos y ranking"),
+        ("📖 Álbum", "Mirá tu colección"),
+        ("⭐ Mi 11", "Armá tu equipo"),
+        ("🔁 Repetidas", "Tus duplicadas"),
+        ("🔄 Intercambio", "Cambiá figuritas"),
+        ("🏅 Logros", "Tus medallas"),
+        ("🏛️ Históricos", "Leyendas"),
+        ("🌍 Selecciones", "Cuadro del Mundial"),
+    ]
+    for row_start in range(0, len(shortcuts), 3):
+        cols = st.columns(3)
+        for col, (label, helptext) in zip(cols, shortcuts[row_start:row_start + 3]):
+            col.button(
+                label,
+                key=f"home_go_{label}",
+                help=helptext,
+                use_container_width=True,
+                on_click=_go_to_section,
+                args=(label,),
+            )
 
 
 def render_header() -> None:
@@ -212,21 +271,27 @@ def page_inicio(progress: dict) -> None:
     dupes = len(progress.get("duplicates", []))
     ach_count = len(get_achievements(progress_user_id(progress)))
 
+    sim = user_sim_overall(progress)
     pills = [
         f"🎯 Trivias: {trivia_status_label(progress)}",
+        f"🎮 Partidos ganados: {sim['won']}",
         f"🔄 Repetidas: {dupes}",
         f"🏅 Logros: {ach_count}",
     ]
     st.markdown("".join(f'<span class="stat-pill">{p}</span>' for p in pills), unsafe_allow_html=True)
     st.divider()
 
+    render_home_shortcuts()
+    st.divider()
+
     st.subheader("🏟️ Cómo jugar")
-    st.markdown("""
+    st.markdown(f"""
     1. **Trivias** — 6 intentos por día. Si fallás, perdés ese turno.
     2. **Paquete sorpresa** — Al acertar, se abre un sobre con tu figurita.
-    3. **Mi 11 ideal** — Armá tu equipo en distintas formaciones y compartilo.
-    4. **Intercambios** — Cambiá figuritas por otra de la **misma categoría**.
-    5. **Logros** — Desbloqueá medallas al completar metas del álbum.
+    3. **Simulación** — Jugá partidos de fútbol 5 ({MAX_SIM_PER_DAY}/día) y ganá figuritas (+1 si ganás).
+    4. **Mi 11 ideal** — Armá tu equipo en distintas formaciones y compartilo.
+    5. **Intercambios** — Cambiá figuritas por otra de la **misma categoría**.
+    6. **Logros** — Desbloqueá medallas al completar metas del álbum.
     """)
 def page_trivia(progress: dict) -> None:
     remaining = trivia_remaining(progress)
@@ -533,6 +598,214 @@ def page_inventario(progress: dict) -> None:
         st.markdown(f'<div class="sticker-grid">{cards}</div>', unsafe_allow_html=True)
 
 
+def _sim_result_banner(res: dict) -> None:
+    outcome = res["result"]
+    if outcome == "win":
+        st.balloons()
+        headline = "¡Ganaste! 🎉"
+        cls = "sim-score-win"
+    elif outcome == "draw":
+        headline = "Empate 🤝"
+        cls = "sim-score-draw"
+    else:
+        headline = "Perdiste 😕"
+        cls = "sim-score-loss"
+
+    st.markdown(
+        f"""
+        <div class="sim-scoreboard {cls}">
+            <div class="sim-score-headline">{headline}</div>
+            <div class="sim-score-line">
+                <span class="sim-score-team">Tu equipo</span>
+                <span class="sim-score-num">{res['ug']}</span>
+                <span class="sim-score-sep">-</span>
+                <span class="sim-score-num">{res['og']}</span>
+                <span class="sim-score-team">{res['emoji']} {res['name']}</span>
+            </div>
+            <div class="sim-score-meta">Tu fuerza: {res['strength']} · Rival: {res['rating']}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    reward_ids = res.get("rewards", [])
+    n = len(reward_ids)
+    st.markdown(f"#### 🎁 Recompensa: {n} figurita{'s' if n != 1 else ''}")
+    if outcome == "win":
+        st.caption("1 por jugar + 1 extra por ganar.")
+    cards = "".join(
+        sticker_card_html(STICKER_BY_ID[sid], True) for sid in reward_ids if sid in STICKER_BY_ID
+    )
+    st.markdown(f'<div class="sticker-grid">{cards}</div>', unsafe_allow_html=True)
+    st.divider()
+
+
+def _sim_play(progress: dict) -> None:
+    last = st.session_state.pop("sim_last_result", None)
+    if last:
+        _sim_result_banner(last)
+
+    remaining = sim_matches_remaining(progress)
+    st.caption(
+        "Jugás un partido de **fútbol 5** (1 arquero + 4 jugadores) con tus figuritas. "
+        "Ganás **1 figurita por partido** y **+1 extra si ganás**. "
+        "La dificultad del rival depende de la **categoría** de las figuritas."
+    )
+    st.info(f"Te quedan **{remaining}** partidos hoy (máximo {MAX_SIM_PER_DAY}). Se renuevan a medianoche.")
+
+    goalkeepers = available_goalkeepers(progress)
+    outfielders = available_outfielders(progress)
+
+    if not goalkeepers or len(outfielders) < 4:
+        st.warning(
+            "Necesitás al menos **1 arquero** y **4 jugadores** desbloqueados para jugar. "
+            "Conseguí más figuritas en **Trivias**."
+        )
+        return
+
+    st.markdown("##### 🧤 Armá tu equipo (1 arquero + 4 jugadores)")
+    gk = st.selectbox(
+        "Arquero",
+        goalkeepers,
+        format_func=lambda s: f"🧤 {sticker_label(s)}",
+        key="sim_gk",
+    )
+
+    chosen: list[dict] = []
+    cols = st.columns(2)
+    for i in range(4):
+        picked_ids = {p["id"] for p in chosen}
+        opts = [s for s in outfielders if s["id"] not in picked_ids]
+        with cols[i % 2]:
+            sel = st.selectbox(
+                f"Jugador {i + 1}",
+                opts,
+                format_func=sticker_label,
+                key=f"sim_player_{i}",
+            )
+        if sel:
+            chosen.append(sel)
+
+    selected_ids = [gk["id"]] + [p["id"] for p in chosen]
+    user_strength = squad_strength(selected_ids)
+
+    st.markdown("##### 🆚 Elegí tu rival")
+    opponents = sorted(SIM_TEAMS, key=lambda t: t["rating"])
+    opponent = st.selectbox(
+        "Rival",
+        opponents,
+        format_func=lambda t: f"{t['emoji']} {t['name']} · {t['tier_label']} {t['stars']} (fuerza {t['rating']})",
+        key="sim_opponent",
+    )
+
+    diff = user_strength - opponent["rating"]
+    if diff >= 6:
+        pronostico = "Sos amplio favorito 💪"
+    elif diff >= 2:
+        pronostico = "Salís con ventaja 🙂"
+    elif diff <= -6:
+        pronostico = "Va a ser muy cuesta arriba 😬"
+    elif diff <= -2:
+        pronostico = "El rival es favorito 😕"
+    else:
+        pronostico = "Partido parejo ⚖️"
+
+    c1, c2 = st.columns(2)
+    c1.metric("Tu fuerza", user_strength)
+    c2.metric("Fuerza del rival", opponent["rating"])
+    st.caption(f"Pronóstico: {pronostico}")
+
+    with st.expander(f"Ver plantel de {opponent['name']}"):
+        for p in opponent["players"]:
+            st.markdown(
+                f"- **{p['position']}**: {p['name']} "
+                f"· _{RARITY_LABELS.get(p['rarity'], p['rarity'])}_"
+            )
+
+    can_play = remaining > 0
+    if not can_play:
+        st.warning("¡Completaste los partidos de hoy! Volvé mañana.")
+    if st.button("⚽ Jugar partido", type="primary", use_container_width=True, disabled=not can_play):
+        res = play_match(progress, selected_ids, opponent["id"])
+        if res is None:
+            st.warning("No quedan partidos disponibles hoy.")
+        else:
+            st.session_state.sim_last_result = {
+                "emoji": opponent["emoji"],
+                "name": opponent["name"],
+                "ug": res["user_goals"],
+                "og": res["opp_goals"],
+                "result": res["result"],
+                "rewards": [s["id"] for s in res["rewards"]],
+                "strength": res["user_strength"],
+                "rating": opponent["rating"],
+            }
+            if res["achievements"]:
+                st.session_state.pending_achievements = res["achievements"]
+            st.rerun()
+
+
+def _sim_ranking(progress: dict) -> None:
+    overall = user_sim_overall(progress)
+    st.markdown("#### 📊 Tu récord")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Jugados", overall["played"])
+    c2.metric("Ganados", overall["won"])
+    c3.metric("Empates", overall["drawn"])
+    c4.metric("Perdidos", overall["lost"])
+    win_rate = round(overall["won"] / overall["played"] * 100) if overall["played"] else 0
+    c5.metric("% victorias", f"{win_rate}%")
+
+    st.divider()
+    st.markdown("#### 🏆 Ranking de jugadores (por victorias)")
+    ranking = get_sim_ranking(20)
+    if not ranking:
+        st.info("Todavía no hay partidos jugados. ¡Sé el primero en el ranking!")
+    else:
+        me = current_user()
+        my_name = me["username"] if me else None
+        rows = []
+        for i, r in enumerate(ranking, start=1):
+            medal = {1: "🥇", 2: "🥈", 3: "🥉"}.get(i, f"{i}")
+            name = r["username"] + (" (vos)" if r["username"] == my_name else "")
+            rows.append({
+                "#": medal,
+                "Jugador": name,
+                "Ganados": r["won"],
+                "Empates": r["drawn"],
+                "Perdidos": r["lost"],
+                "Jugados": r["played"],
+            })
+        st.dataframe(rows, hide_index=True, use_container_width=True)
+
+    st.divider()
+    st.markdown("#### 🆚 Tu historial por rival")
+    by_opp = get_sim_by_opponent(progress_user_id(progress))
+    if not by_opp:
+        st.caption("Jugá partidos para ver tu historial contra cada equipo.")
+    else:
+        rows = [
+            {
+                "Rival": o["opponent_name"],
+                "Jugados": o["played"],
+                "Ganados": o["won"],
+                "Empates": o["drawn"],
+                "Perdidos": o["lost"],
+            }
+            for o in by_opp
+        ]
+        st.dataframe(rows, hide_index=True, use_container_width=True)
+
+
+def page_simulacion(progress: dict) -> None:
+    st.subheader("🎮 Simulación de partidos")
+    tab_jugar, tab_ranking = st.tabs(["⚽ Jugar", "🏆 Ranking"])
+    with tab_jugar:
+        _sim_play(progress)
+    with tab_ranking:
+        _sim_ranking(progress)
+
+
 def page_intercambio(progress: dict) -> None:
     st.subheader("🔄 Mercado de intercambios")
     st.info(
@@ -821,8 +1094,9 @@ def main() -> None:
         st.divider()
         page = st.radio(
             "Navegación",
-            ["🏠 Inicio", "🎯 Trivias", "📖 Álbum", "⭐ Mi 11", "🔁 Repetidas", "🔄 Intercambio", "🏅 Logros", "🏛️ Históricos", "🌍 Selecciones"],
+            NAV_OPTIONS,
             label_visibility="collapsed",
+            key="nav_choice",
         )
         st.divider()
         if st.button("Cerrar sesión", use_container_width=True):
@@ -843,6 +1117,7 @@ def main() -> None:
     routes = {
         "🏠": page_inicio,
         "🎯": page_trivia,
+        "🎮": page_simulacion,
         "📖": page_album,
         "⭐": page_mi_equipo,
         "🔁": page_inventario,

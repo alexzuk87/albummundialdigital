@@ -131,26 +131,56 @@ RECORDS = [
 ]
 
 
+# Países usados como relleno cuando la respuesta es un país y no hay suficientes
+# distractores en el pool (evita que aparezcan años como opción en preguntas de país).
+_FALLBACK_COUNTRIES = [
+    "Brasil", "Argentina", "Alemania", "Italia", "Francia", "España", "Inglaterra",
+    "Países Bajos", "Uruguay", "Portugal", "Bélgica", "Croacia", "México", "Suiza",
+    "Suecia", "Chile", "Estados Unidos", "Colombia", "Japón", "Corea del Sur",
+]
+
+
 def _pick_wrong(answer: str, pool: list[str], count: int, seed: str) -> list[str]:
-    candidates = [x for x in pool if x != answer]
+    # Dedup preservando variedad: el pool puede tener repetidos (p. ej. sedes).
+    seen: set[str] = set()
+    candidates: list[str] = []
+    for x in pool:
+        if x != answer and x not in seen:
+            seen.add(x)
+            candidates.append(x)
     rng = random.Random(seed)
     rng.shuffle(candidates)
     return candidates[:count]
 
 
 def _options(answer: str, wrong: list[str]) -> list[str]:
-    wrong = [w for w in wrong if w != answer]
     seen = {answer}
     unique_wrong: list[str] = []
     for w in wrong:
         if w not in seen:
             unique_wrong.append(w)
             seen.add(w)
-    while len(unique_wrong) < 3:
-        filler = str(1930 + (len(unique_wrong) + len(answer)) * 4)
-        if filler != answer and filler not in seen:
-            unique_wrong.append(filler)
-            seen.add(filler)
+
+    if len(unique_wrong) < 3:
+        # Relleno coherente con el tipo de respuesta: números para respuestas
+        # numéricas, países para respuestas de texto (nunca años en preguntas de país).
+        if answer.isdigit():
+            base = int(answer)
+            for delta in (1, 2, 3, 4, 5, -1, -2):
+                if len(unique_wrong) >= 3:
+                    break
+                filler = str(max(0, base + delta))
+                if filler not in seen:
+                    unique_wrong.append(filler)
+                    seen.add(filler)
+        else:
+            for filler in _FALLBACK_COUNTRIES:
+                if len(unique_wrong) >= 3:
+                    break
+                if filler not in seen:
+                    unique_wrong.append(filler)
+                    seen.add(filler)
+
     opts = [answer] + unique_wrong[:3]
     rng = random.Random(answer + "|".join(unique_wrong))
     rng.shuffle(opts)
