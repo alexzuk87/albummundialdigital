@@ -311,6 +311,46 @@ def sticker_card_html(
 
 
 
+def legend_avatar_url(name: str) -> str:
+    """Avatar caricaturizado y único por jugador (estilo distinto a las figus normales)."""
+    seed = quote(name)
+    return (
+        f"https://api.dicebear.com/9.x/avataaars/svg?seed={seed}"
+        f"&radius=12&backgroundType=gradientLinear"
+        f"&backgroundColor=b6862c,d4af37,8a6d1b"
+    )
+
+
+def legend_card_html(player: dict, unlocked: bool, threshold: int = 0) -> str:
+    """Figurita de leyenda con marco dorado vintage."""
+    flag_code = player.get("flag_code", "")
+    flag = (
+        f'<img class="legend-flag" src="https://flagcdn.com/w40/{flag_code}.png" '
+        f'width="30" alt="{player.get("country", "")}">'
+        if flag_code else ""
+    )
+
+    if not unlocked:
+        return (
+            '<div class="legend-card legend-locked" title="Leyenda bloqueada">'
+            '<div class="legend-avatar-wrap"><span class="legend-lock">🔒</span></div>'
+            '<div class="legend-tag">LEYENDA</div>'
+            '<div class="legend-name">???</div>'
+            f'<div class="legend-era">Se desbloquea al {threshold}% del álbum</div></div>'
+        )
+
+    avatar = legend_avatar_url(player["name"])
+    return (
+        '<div class="legend-card legend-unlocked" title="' + player["name"] + '">'
+        f'<div class="legend-avatar-wrap">{flag}'
+        f'<img class="legend-avatar" src="{avatar}" alt="{player["name"]}"></div>'
+        '<div class="legend-tag">LEYENDA</div>'
+        f'<div class="legend-name">{player["name"]}</div>'
+        f'<div class="legend-era">{player.get("country", "")} · {player.get("era", "")}</div>'
+        f'<div class="legend-ach">{player.get("achievement", "")}</div></div>'
+    )
+
+
 def reveal_card_html(sticker: dict) -> str:
 
     if sticker.get("kind") == "bandera":

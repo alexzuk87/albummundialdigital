@@ -86,6 +86,26 @@ def init_db() -> None:
             );
 
             CREATE INDEX IF NOT EXISTS idx_sim_matches_user ON sim_matches(user_id);
+
+            CREATE TABLE IF NOT EXISTS user_wallet (
+                user_id INTEGER PRIMARY KEY,
+                coins_spent INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS cup_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                played_on TEXT NOT NULL,
+                round_index INTEGER NOT NULL DEFAULT 0,
+                wins INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_cup_runs_user ON cup_runs(user_id);
             """
         )
 
@@ -369,12 +389,81 @@ def get_sim_ranking(limit: int = 20) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def get_coins_spent(user_id: int) -> int:
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT coins_spent FROM user_wallet WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        return int(row["coins_spent"]) if row else 0
+
+
+def add_coins_spent(user_id: int, amount: int) -> None:
+    """Suma `amount` a las monedas gastadas del usuario (crea la fila si falta)."""
+    with get_conn() as conn:
+        conn.execute(
+            """INSERT INTO user_wallet (user_id, coins_spent) VALUES (?, ?)
+               ON CONFLICT(user_id) DO UPDATE SET coins_spent = coins_spent + ?""",
+            (user_id, amount, amount),
+        )
+
+
+def get_today_cup_run(user_id: int, played_on: str) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT * FROM cup_runs WHERE user_id = ? AND played_on = ?
+               ORDER BY id DESC LIMIT 1""",
+            (user_id, played_on),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def create_cup_run(user_id: int, played_on: str) -> int:
+    with get_conn() as conn:
+        cur = conn.execute(
+            """INSERT INTO cup_runs (user_id, played_on, round_index, wins, status, created_at, updated_at)
+               VALUES (?, ?, 0, 0, 'active', ?, ?)""",
+            (user_id, played_on, _now(), _now()),
+        )
+        return cur.lastrowid
+
+
+def update_cup_run(run_id: int, round_index: int, wins: int, status: str) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """UPDATE cup_runs SET round_index = ?, wins = ?, status = ?, updated_at = ?
+               WHERE id = ?""",
+            (round_index, wins, status, _now(), run_id),
+        )
+
+
+def get_cup_overall(user_id: int) -> dict:
+    with get_conn() as conn:
+        row = conn.execute(
+            """SELECT
+                 COUNT(*) AS runs,
+                 COALESCE(SUM(status = 'champion'), 0) AS champion,
+                 COALESCE(SUM(wins >= 3), 0) AS finals,
+                 COALESCE(MAX(wins), 0) AS best_wins
+               FROM cup_runs WHERE user_id = ?""",
+            (user_id,),
+        ).fetchone()
+        return {
+            "runs": int(row["runs"]),
+            "champion": int(row["champion"]),
+            "finals": int(row["finals"]),
+            "best_wins": int(row["best_wins"]),
+        }
+
+
 def reset_user_progress(user_id: int) -> None:
     with get_conn() as conn:
         conn.execute("DELETE FROM user_stickers WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM user_achievements WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM exchange_offers WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM sim_matches WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM user_wallet WHERE user_id = ?", (user_id,))
+        conn.execute("DELETE FROM cup_runs WHERE user_id = ?", (user_id,))
         conn.execute(
             """UPDATE user_progress SET trivia_today_json = '{}', last_unlock_json = NULL,
                custom_team_json = '{}' WHERE user_id = ?""",

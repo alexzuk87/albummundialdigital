@@ -46,18 +46,19 @@ from services.game_logic import (
 )
 from services.album_ui import album_page_html, filter_team_pages
 from services.inventory import duplicates_by_category
-from services.sticker_ui import reveal_card_html, sticker_card_html
+from services.packs import PACKS, coins_balance, open_pack
+from services.sticker_ui import legend_card_html, reveal_card_html, sticker_card_html
 from services.database import (
     get_achievements,
+    get_cup_overall,
     get_sim_by_opponent,
     get_sim_ranking,
     reset_user_progress as reset_user,
 )
-from data.sim_teams import SIM_TEAMS
+from data.tactics import TACTICS, get_tactic, tactic_label
+from services import cup
 from services.simulation import (
-    available_goalkeepers,
-    available_outfielders,
-    play_match,
+    play_friendly,
     sim_matches_remaining,
     squad_strength,
     user_sim_overall,
@@ -82,13 +83,13 @@ NAV_OPTIONS = [
     "🏠 Inicio",
     "🎯 Trivias",
     "🎮 Simular",
+    "🏆 Copa",
     "📖 Álbum",
-    "⭐ Mi 11",
     "🔁 Repetidas",
     "🔄 Intercambio",
+    "🛒 Tienda",
     "🏅 Logros",
     "🏛️ Históricos",
-    "🌍 Selecciones",
 ]
 
 
@@ -157,14 +158,14 @@ def render_home_shortcuts() -> None:
     st.markdown("#### 🚀 Accesos rápidos")
     shortcuts = [
         ("🎯 Trivias", "Jugá y ganá figuritas"),
-        ("🎮 Simular", "Partidos y ranking"),
+        ("🎮 Simular", "Tu equipo y amistosos"),
+        ("🏆 Copa", "Torneo del día"),
         ("📖 Álbum", "Mirá tu colección"),
-        ("⭐ Mi 11", "Armá tu equipo"),
         ("🔁 Repetidas", "Tus duplicadas"),
         ("🔄 Intercambio", "Cambiá figuritas"),
+        ("🛒 Tienda", "Canjeá monedas por packs"),
         ("🏅 Logros", "Tus medallas"),
         ("🏛️ Históricos", "Leyendas"),
-        ("🌍 Selecciones", "Cuadro del Mundial"),
     ]
     for row_start in range(0, len(shortcuts), 3):
         cols = st.columns(3)
@@ -275,6 +276,7 @@ def page_inicio(progress: dict) -> None:
     pills = [
         f"🎯 Trivias: {trivia_status_label(progress)}",
         f"🎮 Partidos ganados: {sim['won']}",
+        f"🪙 Monedas: {coins_balance(progress)}",
         f"🔄 Repetidas: {dupes}",
         f"🏅 Logros: {ach_count}",
     ]
@@ -288,10 +290,11 @@ def page_inicio(progress: dict) -> None:
     st.markdown(f"""
     1. **Trivias** — 6 intentos por día. Si fallás, perdés ese turno.
     2. **Paquete sorpresa** — Al acertar, se abre un sobre con tu figurita.
-    3. **Simulación** — Jugá partidos de fútbol 5 ({MAX_SIM_PER_DAY}/día) y ganá figuritas (+1 si ganás).
-    4. **Mi 11 ideal** — Armá tu equipo en distintas formaciones y compartilo.
+    3. **Simular** — Armá tu **11** con formación y **táctica**, y jugá amistosos ({MAX_SIM_PER_DAY}/día) vs selecciones reales.
+    4. **Copa** — Un **torneo por día** vs selecciones: avanzás mientras ganás. ¡Ganá la final y sé Campeón del Mundo!
     5. **Intercambios** — Cambiá figuritas por otra de la **misma categoría**.
-    6. **Logros** — Desbloqueá medallas al completar metas del álbum.
+    6. **Logros** — Desbloqueá medallas y ganá **monedas** 🪙 al completar metas.
+    7. **Tienda** — Canjeá tus monedas por **sobres de figuritas**.
     """)
 def page_trivia(progress: dict) -> None:
     remaining = trivia_remaining(progress)
@@ -365,33 +368,49 @@ def page_trivia(progress: dict) -> None:
             st.rerun()
 
 
-def page_mi_equipo(progress: dict) -> None:
-    st.subheader("⭐ Mi 11 ideal")
+def _user_team(progress: dict):
+    """Devuelve (team, formation_id, tactic_id, lineup_ids, completo)."""
+    team = ensure_custom_team(progress)
+    formation_id = team.get("formation", "4-3-3")
+    tactic_id = team.get("tactic", "equilibrada")
+    slots = get_formation(formation_id)["slots"]
+    lineup = team.get("lineup", {})
+    ids = [lineup.get(s["key"]) for s in slots]
+    complete = len(ids) == 11 and all(ids)
+    return team, formation_id, tactic_id, [i for i in ids if i], complete
+
+
+def _mi_equipo_tab(progress: dict) -> None:
     if not progress.get("unlocked_stickers"):
         st.info("Desbloqueá figuritas en **Trivias** para armar tu equipo.")
         return
 
     team_data = ensure_custom_team(progress)
     formation_id = team_data.get("formation", "4-3-3")
+    tactic_id = team_data.get("tactic", "equilibrada")
     saved_lineup = team_data["lineup"]
     filled = lineup_filled_count(saved_lineup, formation_id)
 
     if filled > 0:
         st.markdown("### Tu equipo guardado")
         st.markdown(formation_pitch_html(team_data["name"], formation_id, saved_lineup), unsafe_allow_html=True)
-        st.caption(f"Jugadores: **{filled}/11**")
+        t = get_tactic(tactic_id)
+        st.caption(f"Jugadores: **{filled}/11** · Táctica: **{t['emoji']} {t['label']}**")
+        if filled < 11:
+            st.warning("Completá los **11** para poder jugar amistosos y la Copa.")
 
         share_text, links = get_share_content(team_data["name"], formation_id, saved_lineup)
-        st.markdown("#### 📣 Compartir en redes")
-        st.text_area("Texto para copiar", share_text, height=160, key="share_text")
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.link_button("🐦 X / Twitter", links["twitter"], use_container_width=True)
-        c2.link_button("📘 Facebook", links["facebook"], use_container_width=True)
-        c3.link_button("💬 WhatsApp", links["whatsapp"], use_container_width=True)
-        c4.link_button("✈️ Telegram", links["telegram"], use_container_width=True)
-        c5.link_button("📷 Instagram", links["instagram"], use_container_width=True)
+        with st.expander("📣 Compartir en redes"):
+            st.text_area("Texto para copiar", share_text, height=140, key="share_text")
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.link_button("🐦 X", links["twitter"], use_container_width=True)
+            c2.link_button("📘 Facebook", links["facebook"], use_container_width=True)
+            c3.link_button("💬 WhatsApp", links["whatsapp"], use_container_width=True)
+            c4.link_button("✈️ Telegram", links["telegram"], use_container_width=True)
+            c5.link_button("📷 Instagram", links["instagram"], use_container_width=True)
         st.divider()
 
+    tactic_ids = list(TACTICS.keys())
     with st.form("team_form"):
         team_name = st.text_input(
             "Nombre de tu equipo",
@@ -399,13 +418,22 @@ def page_mi_equipo(progress: dict) -> None:
             max_chars=40,
             key="team_name_input",
         )
-        picked_formation = st.selectbox(
-            "Formación táctica",
+        cfa, cfb = st.columns(2)
+        picked_formation = cfa.selectbox(
+            "Formación",
             list(FORMATIONS.keys()),
             index=list(FORMATIONS.keys()).index(formation_id) if formation_id in FORMATIONS else 0,
             format_func=lambda x: FORMATIONS[x]["label"],
             key="team_formation_pick",
         )
+        picked_tactic = cfb.selectbox(
+            "Táctica",
+            tactic_ids,
+            index=tactic_ids.index(tactic_id) if tactic_id in TACTICS else 0,
+            format_func=tactic_label,
+            key="team_tactic_pick",
+        )
+        st.caption(f"🧠 {get_tactic(picked_tactic)['desc']}")
         slots = get_formation(picked_formation)["slots"]
         st.caption("Elegí jugadores desbloqueados. Cada uno solo puede estar una vez.")
 
@@ -425,17 +453,17 @@ def page_mi_equipo(progress: dict) -> None:
             )
 
         c1, c2 = st.columns(2)
-        save = c1.form_submit_button("💾 Guardar mi 11", type="primary", use_container_width=True)
+        save = c1.form_submit_button("💾 Guardar equipo", type="primary", use_container_width=True)
         clear = c2.form_submit_button("🗑️ Vaciar", use_container_width=True)
 
     if clear:
         from data.formations import empty_lineup
-        save_custom_team(progress, team_data["name"], picked_formation, empty_lineup(picked_formation))
+        save_custom_team(progress, team_data["name"], picked_formation, empty_lineup(picked_formation), tactic=picked_tactic)
         st.success("Plantilla vaciada.")
         refresh_progress()
         st.rerun()
     if save:
-        save_custom_team(progress, team_name, picked_formation, draft)
+        save_custom_team(progress, team_name, picked_formation, draft, tactic=picked_tactic)
         st.success(f"¡Equipo **{team_name}** guardado!")
         refresh_progress()
         st.rerun()
@@ -598,150 +626,105 @@ def page_inventario(progress: dict) -> None:
         st.markdown(f'<div class="sticker-grid">{cards}</div>', unsafe_allow_html=True)
 
 
-def _sim_result_banner(res: dict) -> None:
+def _edge_note(edge: int, user_tactic: str, opp_tactic: str) -> str:
+    ut, ot = get_tactic(user_tactic), get_tactic(opp_tactic)
+    if edge > 0:
+        return f"💪 Ventaja táctica: tu {ut['emoji']} {ut['label']} le ganó a {ot['emoji']} {ot['label']}."
+    if edge < 0:
+        return f"😬 Desventaja táctica: {ot['emoji']} {ot['label']} le ganó a tu {ut['emoji']} {ut['label']}."
+    return f"⚖️ Duelo táctico parejo: {ut['emoji']} {ut['label']} vs {ot['emoji']} {ot['label']}."
+
+
+def _scoreboard_html(headline: str, cls: str, my_strength: int, opp: dict,
+                     ug: int, og: int, sub: str = "") -> str:
+    flag = flag_img_html(opp["team_id"], 22)
+    return (
+        f'<div class="sim-scoreboard {cls}">'
+        f'<div class="sim-score-headline">{headline}</div>'
+        f'<div class="sim-score-line">'
+        f'<span class="sim-score-team">Tu equipo</span>'
+        f'<span class="sim-score-num">{ug}</span>'
+        f'<span class="sim-score-sep">-</span>'
+        f'<span class="sim-score-num">{og}</span>'
+        f'<span class="sim-score-team">{flag} {opp["name"]}</span>'
+        f'</div>'
+        f'<div class="sim-score-meta">Tu fuerza: {my_strength} · Rival: {opp["strength"]}{sub}</div>'
+        f'</div>'
+    )
+
+
+def _rewards_block(rewards: list[dict], header: str) -> None:
+    if not rewards:
+        return
+    st.markdown(header)
+    cards = "".join(sticker_card_html(s, True) for s in rewards)
+    st.markdown(f'<div class="sticker-grid">{cards}</div>', unsafe_allow_html=True)
+
+
+def _opponent_lineup_expander(opp: dict) -> None:
+    with st.expander(f"Ver plantel de {opp['name']}"):
+        ot = get_tactic(opp["tactic"])
+        st.caption(f"Táctica del rival: {ot['emoji']} {ot['label']}")
+        st.markdown(formation_pitch_html(opp["name"], "4-3-3", opp["lineup"]), unsafe_allow_html=True)
+
+
+def _friendly_banner(res: dict) -> None:
+    opp = res["opponent"]
     outcome = res["result"]
     if outcome == "win":
         st.balloons()
-        headline = "¡Ganaste! 🎉"
-        cls = "sim-score-win"
+        headline, cls = "¡Ganaste! 🎉", "sim-score-win"
     elif outcome == "draw":
-        headline = "Empate 🤝"
-        cls = "sim-score-draw"
+        headline, cls = "Empate 🤝", "sim-score-draw"
     else:
-        headline = "Perdiste 😕"
-        cls = "sim-score-loss"
+        headline, cls = "Perdiste 😕", "sim-score-loss"
 
     st.markdown(
-        f"""
-        <div class="sim-scoreboard {cls}">
-            <div class="sim-score-headline">{headline}</div>
-            <div class="sim-score-line">
-                <span class="sim-score-team">Tu equipo</span>
-                <span class="sim-score-num">{res['ug']}</span>
-                <span class="sim-score-sep">-</span>
-                <span class="sim-score-num">{res['og']}</span>
-                <span class="sim-score-team">{res['emoji']} {res['name']}</span>
-            </div>
-            <div class="sim-score-meta">Tu fuerza: {res['strength']} · Rival: {res['rating']}</div>
-        </div>
-        """,
+        _scoreboard_html(headline, cls, res["user_strength"], opp, res["user_goals"], res["opp_goals"]),
         unsafe_allow_html=True,
     )
-
-    reward_ids = res.get("rewards", [])
-    n = len(reward_ids)
-    st.markdown(f"#### 🎁 Recompensa: {n} figurita{'s' if n != 1 else ''}")
-    if outcome == "win":
-        st.caption("1 por jugar + 1 extra por ganar.")
-    cards = "".join(
-        sticker_card_html(STICKER_BY_ID[sid], True) for sid in reward_ids if sid in STICKER_BY_ID
-    )
-    st.markdown(f'<div class="sticker-grid">{cards}</div>', unsafe_allow_html=True)
+    st.caption(_edge_note(res["edge"], res["user_tactic"], opp["tactic"]))
+    n = len(res.get("rewards", []))
+    _rewards_block(res.get("rewards", []), f"#### 🎁 Recompensa: {n} figurita{'s' if n != 1 else ''}")
+    _opponent_lineup_expander(opp)
     st.divider()
 
 
-def _sim_play(progress: dict) -> None:
-    last = st.session_state.pop("sim_last_result", None)
+def _amistoso_tab(progress: dict) -> None:
+    last = st.session_state.pop("friendly_last", None)
     if last:
-        _sim_result_banner(last)
+        _friendly_banner(last)
 
+    team, formation_id, tactic_id, ids, complete = _user_team(progress)
     remaining = sim_matches_remaining(progress)
     st.caption(
-        "Jugás un partido de **fútbol 5** (1 arquero + 4 jugadores) con tus figuritas. "
-        "Ganás **1 figurita por partido** y **+1 extra si ganás**. "
-        "La dificultad del rival depende de la **categoría** de las figuritas."
+        "Amistoso **11 vs 11** contra una **selección real** de nivel parecido, "
+        "con tu equipo y tu táctica. Ganás **1 figurita** (**+1** si ganás)."
     )
-    st.info(f"Te quedan **{remaining}** partidos hoy (máximo {MAX_SIM_PER_DAY}). Se renuevan a medianoche.")
+    st.info(f"Te quedan **{remaining}** amistosos hoy (máximo {MAX_SIM_PER_DAY}). Se renuevan a medianoche.")
 
-    goalkeepers = available_goalkeepers(progress)
-    outfielders = available_outfielders(progress)
-
-    if not goalkeepers or len(outfielders) < 4:
-        st.warning(
-            "Necesitás al menos **1 arquero** y **4 jugadores** desbloqueados para jugar. "
-            "Conseguí más figuritas en **Trivias**."
-        )
+    if not complete:
+        st.warning("Necesitás tu **11 completo** para jugar. Armalo en la pestaña **🧠 Mi equipo**.")
         return
 
-    st.markdown("##### 🧤 Armá tu equipo (1 arquero + 4 jugadores)")
-    gk = st.selectbox(
-        "Arquero",
-        goalkeepers,
-        format_func=lambda s: f"🧤 {sticker_label(s)}",
-        key="sim_gk",
+    t = get_tactic(tactic_id)
+    st.markdown(
+        f"**Tu equipo:** {team['name']} · {FORMATIONS[formation_id]['label']} · "
+        f"{t['emoji']} {t['label']} · fuerza **{squad_strength(ids)}**"
     )
-
-    chosen: list[dict] = []
-    cols = st.columns(2)
-    for i in range(4):
-        picked_ids = {p["id"] for p in chosen}
-        opts = [s for s in outfielders if s["id"] not in picked_ids]
-        with cols[i % 2]:
-            sel = st.selectbox(
-                f"Jugador {i + 1}",
-                opts,
-                format_func=sticker_label,
-                key=f"sim_player_{i}",
-            )
-        if sel:
-            chosen.append(sel)
-
-    selected_ids = [gk["id"]] + [p["id"] for p in chosen]
-    user_strength = squad_strength(selected_ids)
-
-    st.markdown("##### 🆚 Elegí tu rival")
-    opponents = sorted(SIM_TEAMS, key=lambda t: t["rating"])
-    opponent = st.selectbox(
-        "Rival",
-        opponents,
-        format_func=lambda t: f"{t['emoji']} {t['name']} · {t['tier_label']} {t['stars']} (fuerza {t['rating']})",
-        key="sim_opponent",
-    )
-
-    diff = user_strength - opponent["rating"]
-    if diff >= 6:
-        pronostico = "Sos amplio favorito 💪"
-    elif diff >= 2:
-        pronostico = "Salís con ventaja 🙂"
-    elif diff <= -6:
-        pronostico = "Va a ser muy cuesta arriba 😬"
-    elif diff <= -2:
-        pronostico = "El rival es favorito 😕"
-    else:
-        pronostico = "Partido parejo ⚖️"
-
-    c1, c2 = st.columns(2)
-    c1.metric("Tu fuerza", user_strength)
-    c2.metric("Fuerza del rival", opponent["rating"])
-    st.caption(f"Pronóstico: {pronostico}")
-
-    with st.expander(f"Ver plantel de {opponent['name']}"):
-        for p in opponent["players"]:
-            st.markdown(
-                f"- **{p['position']}**: {p['name']} "
-                f"· _{RARITY_LABELS.get(p['rarity'], p['rarity'])}_"
-            )
 
     can_play = remaining > 0
     if not can_play:
-        st.warning("¡Completaste los partidos de hoy! Volvé mañana.")
-    if st.button("⚽ Jugar partido", type="primary", use_container_width=True, disabled=not can_play):
-        res = play_match(progress, selected_ids, opponent["id"])
+        st.warning("¡Completaste los amistosos de hoy! Volvé mañana.")
+    if st.button("⚽ Jugar amistoso", type="primary", use_container_width=True, disabled=not can_play):
+        res = play_friendly(progress, ids, formation_id, tactic_id)
         if res is None:
-            st.warning("No quedan partidos disponibles hoy.")
+            st.warning("No quedan amistosos disponibles hoy.")
         else:
-            st.session_state.sim_last_result = {
-                "emoji": opponent["emoji"],
-                "name": opponent["name"],
-                "ug": res["user_goals"],
-                "og": res["opp_goals"],
-                "result": res["result"],
-                "rewards": [s["id"] for s in res["rewards"]],
-                "strength": res["user_strength"],
-                "rating": opponent["rating"],
-            }
+            st.session_state.friendly_last = res
             if res["achievements"]:
                 st.session_state.pending_achievements = res["achievements"]
+            refresh_progress()
             st.rerun()
 
 
@@ -798,12 +781,252 @@ def _sim_ranking(progress: dict) -> None:
 
 
 def page_simulacion(progress: dict) -> None:
-    st.subheader("🎮 Simulación de partidos")
-    tab_jugar, tab_ranking = st.tabs(["⚽ Jugar", "🏆 Ranking"])
-    with tab_jugar:
-        _sim_play(progress)
+    st.subheader("🎮 Simular")
+    tab_team, tab_friendly, tab_ranking = st.tabs(["🧠 Mi equipo", "⚽ Amistoso", "🏆 Ranking"])
+    with tab_team:
+        _mi_equipo_tab(progress)
+    with tab_friendly:
+        _amistoso_tab(progress)
     with tab_ranking:
         _sim_ranking(progress)
+
+
+def _cup_progress_html(state: dict) -> str:
+    run = state.get("run")
+    wins = run["wins"] if run else 0
+    status = state.get("state")
+    steps = []
+    for i, label in enumerate(cup.ROUND_LABELS):
+        if status == "champion" or i < wins:
+            cls, icon = "cup-step-won", "✅"
+        elif status == "active" and i == wins:
+            cls, icon = "cup-step-now", "▶️"
+        elif status == "eliminated" and i == wins:
+            cls, icon = "cup-step-out", "❌"
+        else:
+            cls, icon = "cup-step-todo", "•"
+        steps.append(f'<div class="cup-step {cls}">{icon} {label}</div>')
+    cls_t = "cup-step-won" if status == "champion" else "cup-step-todo"
+    trophy = f'<div class="cup-step {cls_t}">🏆 Campeón</div>'
+    return f'<div class="cup-bracket">{"".join(steps)}{trophy}</div>'
+
+
+def _cup_round_banner(res: dict) -> None:
+    opp = res["opponent"]
+    if res.get("champion"):
+        st.balloons()
+        headline, cls = "🏆 ¡CAMPEÓN DEL MUNDO!", "sim-score-win"
+    elif res["result"] == "win":
+        st.balloons()
+        headline, cls = f"¡Ganaste {res['round_label']}! ✅", "sim-score-win"
+    else:
+        headline, cls = f"Eliminado en {res['round_label']} 😕", "sim-score-loss"
+
+    sub = " · definido por penales 🥅" if res.get("penalties") else ""
+    st.markdown(
+        _scoreboard_html(headline, cls, squad_strength_safe(res), opp, res["user_goals"], res["opp_goals"], sub),
+        unsafe_allow_html=True,
+    )
+    st.caption(_edge_note(res["edge"], res["user_tactic"], opp["tactic"]))
+    n = len(res.get("rewards", []))
+    if n:
+        header = "#### 🏆 ¡Premio de Campeón!" if res.get("champion") else f"#### 🎁 Premio de ronda: {n} figurita{'s' if n != 1 else ''}"
+        _rewards_block(res.get("rewards", []), header)
+    _opponent_lineup_expander(opp)
+    st.divider()
+
+
+def squad_strength_safe(res: dict) -> int:
+    return res.get("user_strength", 0)
+
+
+def _cup_active(progress: dict, run: dict, ids: list[str], formation_id: str, tactic_id: str) -> None:
+    round_index = run["round_index"]
+    label = cup.round_label(round_index)
+
+    opp_key = f"cup_opp_{run['id']}_{round_index}"
+    if opp_key not in st.session_state:
+        st.session_state[opp_key] = cup.make_opponent(
+            ids, run, exclude_ids=set(st.session_state.get("cup_used", []))
+        )
+    opp = st.session_state[opp_key]
+    ot = get_tactic(opp["tactic"])
+    flag = flag_img_html(opp["team_id"], 26)
+
+    st.markdown(f"### {label}")
+    st.markdown(
+        f'<div class="cup-vs">{flag} <strong>{opp["name"]}</strong> · fuerza {opp["strength"]} · '
+        f'{ot["emoji"]} {ot["label"]}</div>',
+        unsafe_allow_html=True,
+    )
+    _opponent_lineup_expander(opp)
+
+    if st.button(f"⚔️ Jugar {label}", type="primary", use_container_width=True):
+        res = cup.play_round(progress, run, ids, formation_id, tactic_id, opp)
+        if res is None:
+            st.warning("Esta Copa ya no está activa.")
+        else:
+            res["user_strength"] = squad_strength(ids)
+            res["user_tactic"] = tactic_id
+            used = st.session_state.get("cup_used", [])
+            used.append(opp["id"])
+            st.session_state.cup_used = used
+            st.session_state.pop(opp_key, None)
+            st.session_state.cup_last = res
+            if res["achievements"]:
+                st.session_state.pending_achievements = res["achievements"]
+            refresh_progress()
+            st.rerun()
+
+
+def page_copa(progress: dict) -> None:
+    st.subheader("🏆 Copa del Mundo")
+    st.caption(
+        "Un **torneo de eliminación por día** contra selecciones reales, cada vez más fuertes. "
+        "Avanzás mientras ganás; si perdés, quedás afuera hasta mañana. En la Copa **no hay empate**: "
+        "si termina igualado, se define por **penales**."
+    )
+
+    team, formation_id, tactic_id, ids, complete = _user_team(progress)
+    if not complete:
+        st.warning("Necesitás tu **11 completo** para jugar la Copa. Armalo en **🎮 Simular › 🧠 Mi equipo**.")
+        return
+
+    t = get_tactic(tactic_id)
+    st.markdown(
+        f"**Tu equipo:** {team['name']} · {FORMATIONS[formation_id]['label']} · "
+        f"{t['emoji']} {t['label']} · fuerza **{squad_strength(ids)}**"
+    )
+    overall = get_cup_overall(progress_user_id(progress))
+    if overall["runs"]:
+        st.caption(f"🏆 Copas ganadas: **{overall['champion']}** · finales: **{overall['finals']}** · torneos jugados: **{overall['runs']}**")
+
+    last = st.session_state.pop("cup_last", None)
+    if last:
+        _cup_round_banner(last)
+
+    state = cup.cup_state(progress)
+    st.markdown(_cup_progress_html(state), unsafe_allow_html=True)
+    s = state["state"]
+
+    if s == "idle":
+        st.info("¡La Copa de hoy te espera! Ganá 4 rondas seguidas para ser Campeón del Mundo.")
+        if st.button("🎫 Iniciar Copa", type="primary", use_container_width=True):
+            cup.start_cup(progress)
+            st.session_state.cup_used = []
+            st.rerun()
+    elif s == "active":
+        _cup_active(progress, state["run"], ids, formation_id, tactic_id)
+    elif s == "champion":
+        st.success("🏆 ¡Sos **Campeón del Mundo**! Volvé mañana para una nueva Copa.")
+    elif s == "eliminated":
+        st.info("Quedaste eliminado en esta Copa. 🌙 Volvé mañana para intentarlo de nuevo.")
+
+
+# Usuario de Cafecito (cambialo por el tuyo en https://cafecito.app).
+CAFECITO_USER = "albummundialdigital"
+
+
+def _pack_odds_text(weights: dict[str, int]) -> str:
+    total = sum(weights.values()) or 1
+    parts = []
+    for cat in ("legendaria", "epica", "rara"):
+        if weights.get(cat):
+            parts.append(f"{RARITY_LABELS[cat]} {round(weights[cat] / total * 100)}%")
+    return " · ".join(parts)
+
+
+def _pack_reveal(result: dict) -> None:
+    pack = result["pack"]
+    rewards = result["rewards"]
+    n = len(rewards)
+    st.markdown(
+        f'<div class="sim-scoreboard sim-score-win">'
+        f'<div class="sim-score-headline">¡Abriste el {pack["emoji"]} {pack["name"]}!</div>'
+        f'<div class="sim-score-meta">Conseguiste {n} figurita{"s" if n != 1 else ""}</div>'
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    cards = "".join(sticker_card_html(s, True) for s in rewards)
+    st.markdown(f'<div class="sticker-grid">{cards}</div>', unsafe_allow_html=True)
+    st.divider()
+
+
+def _tienda_packs(progress: dict) -> None:
+    last = st.session_state.pop("pack_last_result", None)
+    if last:
+        _pack_reveal(last)
+
+    balance = coins_balance(progress)
+    st.markdown(
+        f'<div class="coin-balance">🪙 Tenés <strong>{balance}</strong> monedas</div>',
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Ganás monedas desbloqueando **logros**. Canjealas acá por sobres y sumá "
+        "figuritas a tu álbum. Los sobres priorizan las figuritas que te faltan."
+    )
+
+    cols = st.columns(len(PACKS))
+    for col, pack in zip(cols, PACKS):
+        with col:
+            st.markdown(
+                f'<div class="pack-card pack-{pack["id"]}">'
+                f'<div class="pack-emoji">{pack["emoji"]}</div>'
+                f'<div class="pack-name">{pack["name"]}</div>'
+                f'<div class="pack-cost">{pack["cost"]} 🪙</div>'
+                f'<div class="pack-desc">{pack["desc"]}</div>'
+                f'<div class="pack-odds">{_pack_odds_text(pack["weights"])}</div>'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            afford = balance >= pack["cost"]
+            if st.button(
+                f"Abrir por {pack['cost']} 🪙",
+                key=f"open_pack_{pack['id']}",
+                type="primary",
+                use_container_width=True,
+                disabled=not afford,
+            ):
+                res = open_pack(progress, pack["id"])
+                if not res["ok"]:
+                    st.warning("No te alcanzan las monedas para este sobre.")
+                else:
+                    st.session_state.pack_last_result = res
+                    if res["achievements"]:
+                        st.session_state.pending_achievements = res["achievements"]
+                    st.rerun()
+            if not afford:
+                st.caption(f"Te faltan {pack['cost'] - balance} 🪙")
+
+
+def _tienda_apoyar() -> None:
+    st.markdown("#### 💛 Apoyá el proyecto")
+    st.markdown(
+        "El **Álbum Mundial Digital** es gratis y sin publicidad. "
+        "Si te gusta y querés bancar el proyecto, podés invitarme un cafecito. "
+        "¡Mil gracias por el aguante! 🙌"
+    )
+    st.markdown(
+        f'<a href="https://cafecito.app/{CAFECITO_USER}" target="_blank" rel="noopener noreferrer">'
+        f'<img src="https://cdn.cafecito.app/imgs/buttons/button_3.png" '
+        f'alt="Invitame un café en cafecito.app" style="max-width:100%;height:auto;border:0;">'
+        f"</a>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        "Las donaciones son **voluntarias** y no otorgan ventajas dentro del juego. "
+        "Las monedas se ganan jugando y desbloqueando logros."
+    )
+
+
+def page_tienda(progress: dict) -> None:
+    st.subheader("🛒 Tienda")
+    tab_packs, tab_apoyar = st.tabs(["🎁 Packs", "💛 Apoyar"])
+    with tab_packs:
+        _tienda_packs(progress)
+    with tab_apoyar:
+        _tienda_apoyar()
 
 
 def page_intercambio(progress: dict) -> None:
@@ -885,192 +1108,51 @@ def page_logros(progress: dict) -> None:
     unlocked_n = sum(1 for a in summary if a["unlocked"])
     st.progress(unlocked_n / len(summary), text=f"{unlocked_n} / {len(summary)} logros desbloqueados")
 
+    st.markdown(
+        f'<div class="coin-balance">🪙 Monedas disponibles: <strong>{coins_balance(progress)}</strong></div>',
+        unsafe_allow_html=True,
+    )
+    st.caption("Cada logro te da monedas para canjear por sobres en la **Tienda** 🛒.")
+
     for ach in summary:
         css = "" if ach["unlocked"] else "historical-locked"
+        coins = ach.get("coins", 0)
         st.markdown(
             f'<div class="historical-card {css}">'
             f'<strong>{ach["icon"]} {ach["title"]}</strong> '
-            f'{"✅" if ach["unlocked"] else "🔒"}<br>'
+            f'{"✅" if ach["unlocked"] else "🔒"} '
+            f'<span class="ach-coins">+{coins} 🪙</span><br>'
             f'<small>{ach["desc"]}</small></div>',
             unsafe_allow_html=True,
         )
 
 
 def page_historicos(progress: dict) -> None:
-    st.subheader("🏛️ Jugadores históricos")
-    pct = progress_stats(progress)["percent"]
-    st.markdown(f"Progreso del álbum: **{pct}%**")
-    for player in HISTORICAL_PLAYERS:
-        threshold = HISTORICAL_UNLOCK_THRESHOLDS.get(player["id"], 100)
-        is_on = pct >= threshold
-        flag = f'<img src="https://flagcdn.com/w40/{player["flag_code"]}.png" width="32">'
-        st.markdown(
-            f'<div class="historical-card {"" if is_on else "historical-locked"}">'
-            f'{flag if is_on else "🔒"} <strong>{player["name"] if is_on else "???"}</strong><br>'
-            f'<small>{player["achievement"] if is_on else f"Desbloquea al {threshold}%"}</small></div>',
-            unsafe_allow_html=True,
-        )
-
-
-def page_selecciones() -> None:
-    from services.bracket import (
-        THIRD_PLACES_NEEDED,
-        bracket_round_labels,
-        build_qualified_32,
-        collect_third_places,
-        default_group_picks,
-        flag_name_row_html,
-        pair_round,
-        teams_by_group,
-        winners_from_pairs,
-    )
-    from services.bracket_ui import (
-        bracket_tree_html_flags,
-        render_best_thirds_picker,
-        render_group_column,
-        render_knockout_match,
-    )
-
-    st.subheader("🌍 Fase de grupos y cuadro final")
+    st.subheader("🏛️ Álbum de leyendas")
     st.caption(
-        "Elegí 1° y 2° de cada grupo, los **8 mejores terceros**, y armá el cuadro eliminatorio "
-        "hasta la final (simulación para jugar con el Mundial 2026)."
+        "Figuritas especiales de las **leyendas del fútbol**, con un estilo distinto. "
+        "Se desbloquean a medida que completás tu álbum."
     )
-
-    if "bracket_state" not in st.session_state:
-        st.session_state.bracket_state = {
-            "group_picks": default_group_picks(),
-            "best_thirds": [],
-            "qualified": None,
-            "rounds": {},
-            "winners": {},
-        }
-    state = st.session_state.bracket_state
-    groups = teams_by_group()
-
-    st.markdown("### Fase de grupos (48 equipos · 12 grupos)")
-    st.caption("Tocá **1°**, **2°** o **3°** en cada bandera; el podio de arriba se actualiza al instante.")
-    group_picks: dict[str, dict[str, str]] = {}
-
-    def _render_group_column(col, letter: str) -> None:
-        if letter not in groups:
-            return
-        picks = dict(state["group_picks"].get(letter) or default_group_picks()[letter])
-        render_group_column(col, letter, groups[letter], picks, group_picks, state)
-
-    row1 = st.columns(6)
-    for col, letter in zip(row1, "ABCDEF"):
-        _render_group_column(col, letter)
-
-    row2 = st.columns(6)
-    for col, letter in zip(row2, "GHIJKL"):
-        _render_group_column(col, letter)
-
-    state["group_picks"] = group_picks
-    all_thirds = collect_third_places(group_picks)
-    thirds_pool_key = tuple(all_thirds)
-    if st.session_state.get("bracket_thirds_pool") != thirds_pool_key:
-        st.session_state.bracket_thirds_pool = thirds_pool_key
-        st.session_state.pop("bracket_best_thirds", None)
-        state["best_thirds"] = []
-    st.markdown("### Mejores terceros (8 de 12 pasan)")
-    prev_thirds = [t for t in state.get("best_thirds", []) if t in all_thirds]
-    if not prev_thirds and not state.get("best_thirds"):
-        state["best_thirds"] = all_thirds[:THIRD_PLACES_NEEDED]
-    state["best_thirds"] = render_best_thirds_picker(
-        all_thirds, state.get("best_thirds", []), state
-    )
-
-    c_reset, c_build = st.columns(2)
-    with c_reset:
-        if st.button("🔄 Nueva simulación", help="Reinicia el cuadro eliminatorio"):
-            st.session_state.bracket_state = {
-                "group_picks": default_group_picks(),
-                "best_thirds": [],
-                "qualified": None,
-                "rounds": {},
-                "winners": {},
-            }
-            st.rerun()
-    with c_build:
-        build_clicked = st.button("Armar cuadro de 32 equipos", type="primary", key="bracket_build_btn")
-
-    if build_clicked:
-        qualified, err = build_qualified_32(group_picks, state["best_thirds"])
-        if err:
-            st.error(err)
-        else:
-            state["qualified"] = qualified
-            state["rounds"] = {"r32": pair_round(qualified)}
-            state["winners"] = {}
-            st.success("¡32 clasificados listos! Elegí ganadores en cada llave abajo.")
-
-    qualified = state.get("qualified")
-    if not qualified:
-        st.info("Completá los grupos y los 8 mejores terceros, luego tocá **Armar cuadro de 32 equipos**.")
-        return
-
-    with st.expander("Ver los 32 clasificados", expanded=False):
-        from services.bracket_ui import TEAM_BY_NAME
-
-        cols = st.columns(4)
-        for i, name in enumerate(qualified):
-            team = TEAM_BY_NAME.get(name)
-            if team:
-                cols[i % 4].markdown(flag_name_row_html(team, 22), unsafe_allow_html=True)
-            else:
-                cols[i % 4].write(f"· {name}")
-
-    round_keys = ["r32", "r16", "qf", "sf", "final"]
-    sizes = [32, 16, 8, 4, 2]
-    active_rounds = [
-        (bracket_round_labels(sizes[i]), state["rounds"][rk], rk)
-        for i, rk in enumerate(round_keys)
-        if rk in state["rounds"]
+    pct = progress_stats(progress)["percent"]
+    unlocked = [
+        p for p in HISTORICAL_PLAYERS
+        if pct >= HISTORICAL_UNLOCK_THRESHOLDS.get(p["id"], 100)
     ]
-    if active_rounds:
-        st.markdown("### Cuadro eliminatorio")
-        st.markdown(
-            bracket_tree_html_flags(active_rounds, state["winners"]),
-            unsafe_allow_html=True,
+    total = len(HISTORICAL_PLAYERS)
+    st.progress(
+        min(1.0, len(unlocked) / total) if total else 0.0,
+        text=f"{len(unlocked)} / {total} leyendas · álbum al {pct}%",
+    )
+
+    cards = "".join(
+        legend_card_html(
+            player,
+            pct >= HISTORICAL_UNLOCK_THRESHOLDS.get(player["id"], 100),
+            HISTORICAL_UNLOCK_THRESHOLDS.get(player["id"], 100),
         )
-
-    for rkey, size in zip(round_keys, sizes):
-        pairs = state["rounds"].get(rkey)
-        if not pairs:
-            continue
-        st.markdown(f"### {bracket_round_labels(size)} — elegí ganadores")
-        cols_n = 4 if len(pairs) >= 8 else 2
-        for row_start in range(0, len(pairs), cols_n):
-            cols = st.columns(cols_n)
-            for col_i, col in enumerate(cols):
-                i = row_start + col_i
-                if i >= len(pairs):
-                    break
-                a, b = pairs[i]
-                render_knockout_match(
-                    col, a, b, rkey, i, state["winners"], state
-                )
-
-        winners, err = winners_from_pairs(pairs, state["winners"], rkey)
-        if err:
-            st.warning(err)
-            continue
-        if rkey == "final" and winners:
-            st.balloons()
-            st.success(f"🏆 ¡Campeón del Mundial 2026 (tu simulación): **{winners[0]}**!")
-            continue
-        next_idx = round_keys.index(rkey) + 1
-        if next_idx < len(round_keys) and winners:
-            next_key = round_keys[next_idx]
-            if next_key not in state["rounds"]:
-                if st.button(
-                    f"Avanzar a {bracket_round_labels(sizes[next_idx])} →",
-                    key=f"adv_{rkey}",
-                    type="primary",
-                ):
-                    state["rounds"][next_key] = pair_round(winners)
-                    st.rerun()
+        for player in HISTORICAL_PLAYERS
+    )
+    st.markdown(f'<div class="legend-grid">{cards}</div>', unsafe_allow_html=True)
 
 
 def main() -> None:
@@ -1118,20 +1200,17 @@ def main() -> None:
         "🏠": page_inicio,
         "🎯": page_trivia,
         "🎮": page_simulacion,
+        "🏆": page_copa,
         "📖": page_album,
-        "⭐": page_mi_equipo,
         "🔁": page_inventario,
         "🔄": page_intercambio,
+        "🛒": page_tienda,
         "🏅": page_logros,
         "🏛️": page_historicos,
-        "🌍": page_selecciones,
     }
     for prefix, handler in routes.items():
         if page.startswith(prefix):
-            if prefix == "🌍":
-                handler()
-            else:
-                handler(progress)
+            handler(progress)
             break
 
 

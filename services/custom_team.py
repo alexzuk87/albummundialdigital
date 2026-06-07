@@ -6,6 +6,7 @@ from data.formations import FORMATIONS, empty_lineup, get_formation
 DEFAULT_CUSTOM_TEAM = {
     "name": "Mi Equipo Soñado",
     "formation": "4-3-3",
+    "tactic": "equilibrada",
     "lineup": {},
 }
 
@@ -29,6 +30,7 @@ def ensure_custom_team(progress: dict) -> dict:
         }
     team = progress["custom_team"]
     team.setdefault("name", DEFAULT_CUSTOM_TEAM["name"])
+    team.setdefault("tactic", DEFAULT_CUSTOM_TEAM["tactic"])
     formation_id = team.get("formation", "4-3-3")
     if formation_id not in FORMATIONS:
         formation_id = "4-3-3"
@@ -83,6 +85,7 @@ def save_custom_team(
     name: str,
     formation_id: str,
     lineup: dict,
+    tactic: str | None = None,
 ) -> None:
     from services.achievements import check_and_unlock
     from services.progress_utils import progress_user_id
@@ -92,6 +95,8 @@ def save_custom_team(
     team = ensure_custom_team(progress)
     team["name"] = name.strip() or DEFAULT_CUSTOM_TEAM["name"]
     team["formation"] = formation_id if formation_id in FORMATIONS else "4-3-3"
+    if tactic is not None:
+        team["tactic"] = tactic
     slots = get_formation(team["formation"])["slots"]
     owned = set(progress.get("unlocked_stickers", []))
     team["lineup"] = {}

@@ -1729,6 +1729,177 @@ div[data-testid="stMetric"] {
         font-size: 0.85rem;
     }
 }
+
+/* ===== Tienda: monedas y sobres ===== */
+.coin-balance {
+    display: inline-block;
+    background: linear-gradient(135deg, #fff4d1, #ffe08a);
+    color: #6b4e00;
+    font-size: 1.1rem;
+    font-weight: 800;
+    padding: 8px 18px;
+    border-radius: 999px;
+    border: 2px solid #f0c419;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    margin: 4px 0 10px;
+}
+.coin-balance strong { color: #4a3600; }
+
+.ach-coins {
+    display: inline-block;
+    font-weight: 800;
+    color: #8a6d00;
+    background: #fff1bf;
+    border-radius: 8px;
+    padding: 1px 8px;
+    font-size: 0.8rem;
+}
+
+.pack-card {
+    background: #ffffff;
+    border-radius: 16px;
+    padding: 16px 12px 14px;
+    text-align: center;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    border: 2px solid #e3e3e3;
+    margin-bottom: 10px;
+    min-height: 190px;
+}
+.pack-bronce { border-color: #cd7f32; background: linear-gradient(180deg, #fff, #fbf1e6); }
+.pack-plata  { border-color: #aab2bd; background: linear-gradient(180deg, #fff, #f1f4f8); }
+.pack-oro    { border-color: #f0c419; background: linear-gradient(180deg, #fff, #fff7df); }
+.pack-emoji { font-size: 2.6rem; line-height: 1; }
+.pack-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.5rem;
+    letter-spacing: 0.5px;
+    color: #1b2a1f;
+    margin-top: 4px;
+}
+.pack-cost {
+    font-weight: 800;
+    color: #8a6d00;
+    font-size: 1.1rem;
+    margin: 2px 0 6px;
+}
+.pack-desc { color: #44524a; font-size: 0.85rem; min-height: 36px; }
+.pack-odds { color: #2196f3; font-weight: 700; font-size: 0.78rem; margin-top: 6px; }
+
+@media (max-width: 640px) {
+    .pack-card { min-height: 0; padding: 12px 8px; }
+    .pack-emoji { font-size: 2rem; }
+    .pack-name { font-size: 1.25rem; }
+    .pack-desc { min-height: 0; }
+}
+
+/* ===== Copa (Modo Torneo) ===== */
+.cup-bracket {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 10px 0 14px;
+}
+.cup-step {
+    flex: 1 1 110px;
+    text-align: center;
+    padding: 8px 6px;
+    border-radius: 10px;
+    font-weight: 700;
+    font-size: 0.82rem;
+    border: 2px solid #d7ded8;
+    background: #f3f6f3;
+    color: #44524a;
+}
+.cup-step-won { background: linear-gradient(135deg,#d6f5dd,#a9e8ba); border-color:#43b35e; color:#16632c; }
+.cup-step-now { background: linear-gradient(135deg,#fff4d1,#ffe08a); border-color:#f0c419; color:#6b4e00; box-shadow:0 0 0 2px rgba(240,196,25,0.35); }
+.cup-step-out { background: linear-gradient(135deg,#ffd9d9,#ffb3b3); border-color:#e05a5a; color:#7a1717; }
+.cup-step-todo { opacity: 0.85; }
+.cup-vs {
+    background: rgba(255,255,255,0.96);
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin: 6px 0 10px;
+    font-size: 1.05rem;
+    color: #1b2a1f;
+    border: 1px solid #d7ded8;
+}
+.cup-vs img { vertical-align: middle; margin-right: 4px; border-radius: 3px; }
+
+/* ===== Álbum de leyendas ===== */
+.legend-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 14px;
+    margin-top: 12px;
+}
+.legend-card {
+    position: relative;
+    border-radius: 16px;
+    padding: 14px 10px 12px;
+    text-align: center;
+    background:
+        radial-gradient(circle at 50% 0%, rgba(255,255,255,0.4), transparent 60%),
+        linear-gradient(160deg, #6e5410 0%, #b6862c 30%, #f5d77a 50%, #b6862c 72%, #6e5410 100%);
+    border: 3px solid #f0d27a;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.3), inset 0 0 14px rgba(255,255,255,0.25);
+    color: #fff;
+}
+.legend-locked {
+    background: linear-gradient(160deg, #4a4a4a, #6b6b6b 50%, #4a4a4a);
+    border-color: #8a8a8a;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+.legend-avatar-wrap { position: relative; display: inline-block; }
+.legend-avatar {
+    width: 92px;
+    height: 92px;
+    border-radius: 50%;
+    border: 3px solid rgba(255,255,255,0.85);
+    background: #fff;
+    box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+}
+.legend-flag {
+    position: absolute;
+    bottom: 2px;
+    right: -4px;
+    border-radius: 3px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+.legend-lock { font-size: 3rem; display: inline-block; line-height: 92px; opacity: 0.85; }
+.legend-tag {
+    display: inline-block;
+    margin: 8px 0 2px;
+    padding: 1px 12px;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+    background: rgba(0,0,0,0.35);
+    color: #ffe9a8;
+    border: 1px solid rgba(255,233,168,0.5);
+}
+.legend-name {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 1.35rem;
+    letter-spacing: 0.5px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.45);
+}
+.legend-era { font-size: 0.74rem; font-weight: 700; opacity: 0.95; }
+.legend-ach {
+    font-size: 0.74rem;
+    margin-top: 6px;
+    background: rgba(0,0,0,0.25);
+    border-radius: 8px;
+    padding: 5px 7px;
+    line-height: 1.25;
+}
+.legend-locked .legend-name, .legend-locked .legend-era { color: #e8e8e8; }
+
+@media (max-width: 640px) {
+    .legend-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+    .legend-avatar { width: 76px; height: 76px; }
+    .legend-name { font-size: 1.15rem; }
+}
 </style>
 """
 
